@@ -684,36 +684,6 @@ body{display:flex;flex-direction:column;max-width:540px;margin:0 auto;position:r
       <button class="btn btn-o" onclick="addStep()">＋ Adicionar Passo</button>
     </div>
 
-    <!-- CRM Section -->
-    <div class="crm-card" style="margin-top:12px;">
-      <div class="crm-card-h">
-        <div class="ci">⚠</div>
-        <div><div class="ct">CRM Aplicáveis</div></div>
-      </div>
-      <div class="crm-card-b">
-        <div class="crm-note">
-          <b>Nota:</b> O não CRM é pré requisito para parada da atividade.
-        </div>
-        <div class="fg" style="margin:0;">
-          <label style="color:var(--orange);">Selecione os CRMs aplicáveis</label>
-          <div class="crm-grid" id="ed-crm-grid"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:12px;">
-      <div class="card-h"><div class="ci" style="background:var(--green-bg);border:1px solid rgba(255,82,82,.15);">📊</div>
-        <div><div class="ct">Rodapé da Instrução</div></div></div>
-      <div class="card-b">
-        <div class="fg"><label>Resultados Esperados</label>
-          <textarea id="ed-result" placeholder="Descreva os resultados esperados…"></textarea></div>
-        <div class="fg"><label>EPIs Obrigatórios</label>
-          <textarea id="ed-epis" placeholder="Capacete, óculos, luvas anti-impacto, cinto paraquedista…"></textarea></div>
-        <div class="fg" style="margin:0;"><label>Referências (PRO, normas)</label>
-          <textarea id="ed-refs" placeholder="Não há PRO associado"></textarea></div>
-      </div>
-    </div>
-
     <div class="btn-row" style="margin-top:10px;">
       <button class="btn btn-g" onclick="saveIT()">💾 Salvar Instrução</button>
       <button class="btn btn-b" onclick="previewIT()">👁 Visualizar</button>
@@ -1264,6 +1234,11 @@ const RISK_ICONS = [
    icon:mkTriIcon('<circle cx="32" cy="18" r="3" fill="#222"/><path d="M32,21v8" stroke="#222" stroke-width="2"/><path d="M26,24l-6,8M38,24l6,8" stroke="#222" stroke-width="2"/><path d="M32,29l-5,12M32,29l5,12" stroke="#222" stroke-width="2"/>')}
 ];
 
+const ASSOCIATED_ICONS = [
+  ...RISK_ICONS,
+  ...CRM_ICONS.map(c=>({name:c.name, icon:c.icon, code:c.code}))
+];
+
 /* ══════════════════════════════════════════
    STORAGE
 ══════════════════════════════════════════ */
@@ -1302,11 +1277,9 @@ function goNewIT(){currentITId=uid();resetEditor();navTo('sc-editor');setNav('na
    EDITOR STATE
 ══════════════════════════════════════════ */
 let edSteps=[];
-let edCRMs=[];
 
 function resetEditor(){
   edSteps=[];
-  edCRMs=[];
   document.getElementById('ed-titulo').value='';
   document.getElementById('ed-pro').value='';
   document.getElementById('ed-art').value='';
@@ -1316,11 +1289,20 @@ function resetEditor(){
   document.getElementById('ed-rev').value='01';
   document.getElementById('ed-data').value=new Date().toISOString().slice(0,10);
   document.getElementById('ed-relev').value='';
-  document.getElementById('ed-result').value='';
-  document.getElementById('ed-epis').value='';
-  document.getElementById('ed-refs').value='';
-  renderCRMChips();
+
   addStep();
+}
+
+function normalizeAssociatedSelections(steps, legacyCrms){
+  const crmOffset = RISK_ICONS.length;
+  const legacySelections = (legacyCrms||[]).map(i=>crmOffset + i);
+  return JSON.parse(JSON.stringify(steps||[])).map(step=>({
+    ...step,
+    elements:(step.elements||[]).map(el=>({
+      ...el,
+      risks:Array.from(new Set([...(el.risks||[]), ...legacySelections]))
+    }))
+  }));
 }
 
 function makeElement(){return{id:uid(),type:'tec',title:'',comoFazer:'',porqueFazer:'',condicoesPerigosas:'',controlesCriticos:'',image:'',risks:[]}}
@@ -1340,30 +1322,8 @@ function removeStep(stepId){
   renderSteps();
 }
 
-function renderCRMChips(){
-  const grid=document.getElementById('ed-crm-grid');
-  if(!grid)return;
-  grid.innerHTML=CRM_ICONS.map((c,i)=>{
-    const sel=edCRMs.includes(i)?'sel':'';
-    return `<div class="crm-chip ${sel}" onclick="toggleCRM(this,${i})" data-ci="${i}">
-      <img src="${c.icon}" alt="${c.name}" style="width:26px;height:26px;border-radius:4px;border:1px solid rgba(255,200,0,.3);"/>
-      <span>${c.name}</span></div>`;
-  }).join('');
-}
-
-function toggleCRM(chip,idx){
-  chip.classList.toggle('sel');
-}
-
-function collectCRMs(){
-  const grid=document.getElementById('ed-crm-grid');
-  if(!grid)return[];
-  const chips=grid.querySelectorAll('.crm-chip.sel');
-  return Array.from(chips).map(c=>parseInt(c.dataset.ci));
-}
-
 function renderRiskChips(el){
-  return RISK_ICONS.map((r,i)=>{
+  return ASSOCIATED_ICONS.map((r,i)=>{
     const sel=el.risks&&el.risks.includes(i)?'sel':'';
     return `<div class="risk-chip ${sel}" onclick="toggleRisk(this,${i})" data-ri="${i}">
       <img src="${r.icon}" alt="${r.name}" style="width:26px;height:26px;border-radius:4px;border:1px solid rgba(255,200,0,.3);"/><span>${r.name}</span></div>`;
@@ -1540,10 +1500,9 @@ function collectIT(){
     data:document.getElementById('ed-data').value,
     relevancia:document.getElementById('ed-relev').value,
     steps:JSON.parse(JSON.stringify(edSteps)),
-    crms:collectCRMs(),
-    resultados:document.getElementById('ed-result').value,
-    epis:document.getElementById('ed-epis').value,
-    referencias:document.getElementById('ed-refs').value,
+    resultados:'',
+    epis:'',
+    referencias:'',
     savedAt:new Date().toISOString()
   };
 }
@@ -1568,14 +1527,10 @@ function openIT(id){
   document.getElementById('ed-rev').value=it.revisao||'01';
   document.getElementById('ed-data').value=it.data||'';
   document.getElementById('ed-relev').value=it.relevancia||'';
-  document.getElementById('ed-result').value=it.resultados||'';
-  document.getElementById('ed-epis').value=it.epis||'';
-  document.getElementById('ed-refs').value=it.referencias||'';
-  edSteps=JSON.parse(JSON.stringify(it.steps||[]));
-  edCRMs=it.crms||[];
+
+  edSteps=normalizeAssociatedSelections(it.steps||[], it.crms||[]);
   if(!edSteps.length)addStep();
   renderSteps();
-  renderCRMChips();
   navTo('sc-editor');setNav('nav-editor');
 }
 
@@ -1664,7 +1619,7 @@ function previewIT(){
         <div class="el-divider"></div>
         <div class="el-section"><div class="el-section-label lbl-orange">⚠ Condições perigosas / Riscos</div>
           <div class="el-section-text">${esc(el.condicoesPerigosas||'—')}</div>
-          ${(el.risks&&el.risks.length)?'<div class="risk-display" style="margin-top:4px;">'+el.risks.map(ri=>{const r=RISK_ICONS[ri];return r?'<div class="risk-badge"><img src="'+r.icon+'" style="width:18px;height:18px;border-radius:2px;"/> '+r.name+'</div>':'';}).join('')+'</div>':''}</div>
+          ${(el.risks&&el.risks.length)?'<div class="risk-display" style="margin-top:4px;">'+el.risks.map(ri=>{const r=ASSOCIATED_ICONS[ri];return r?'<div class="risk-badge"><img src="'+r.icon+'" style="width:18px;height:18px;border-radius:2px;"/> '+r.name+'</div>':'';}).join('')+'</div>':''}</div>
         <div class="el-divider"></div>
         <div class="el-section"><div class="el-section-label lbl-blue">🛡 Controles críticos</div>
           <div class="el-section-text">${esc(el.controlesCriticos||'—')}</div></div>
@@ -1672,29 +1627,6 @@ function previewIT(){
     }
     html+=`</div>`;
   }
-
-  // CRM Section
-  if(data.crms&&data.crms.length){
-    html+=`<div class="crm-card" style="margin-top:12px;">
-      <div class="crm-card-h"><div class="ci">⚠</div><div><div class="ct">CRM Aplicáveis</div></div></div>
-      <div class="crm-card-b">
-        <div class="crm-note"><b>Nota:</b> O não CRM é pré requisito para parada da atividade.</div>
-        <div class="crm-grid">${data.crms.map(ci=>{
-          const c=CRM_ICONS[ci];
-          return c?`<div class="crm-chip sel"><img src="${c.icon}" alt="${c.name}" style="width:26px;height:26px;border-radius:4px;border:1px solid rgba(255,200,0,.3);"/><span>${c.name}</span></div>`:'';
-        }).join('')}</div>
-      </div>
-    </div>`;
-  }
-
-  html+=`<div class="footer-grid" style="margin-top:12px;">
-    <div class="footer-block"><div class="footer-block-h fb-green">✅ Resultados Esperados</div>
-      <div class="footer-block-b">${esc(data.resultados||'—')}</div></div>
-    <div class="footer-block"><div class="footer-block-h fb-blue">🦺 EPIs Obrigatórios</div>
-      <div class="footer-block-b">${esc(data.epis||'—')}</div></div>
-    <div class="footer-block"><div class="footer-block-h fb-orange">📚 Referências</div>
-      <div class="footer-block-b">${esc(data.referencias||'Não há PRO associado')}</div></div>
-  </div>`;
 
   pc.innerHTML=html;
   navTo('sc-preview');setNav('nav-preview');
@@ -1816,6 +1748,24 @@ function preConverterCRMs(crmList){
   );
 }
 
+function preConverterRiskMap(riskIndexes){
+  const uniq = Array.from(new Set((riskIndexes||[]).filter(function(i){
+    return Number.isInteger(i) && !!ASSOCIATED_ICONS[i];
+  })));
+  return Promise.all(
+    uniq.map(function(ri){
+      return svgToPng(ASSOCIATED_ICONS[ri].icon, 256).then(function(png){
+        return [ri, png];
+      });
+    })
+  ).then(function(entries){
+    return entries.reduce(function(acc, pair){
+      acc[pair[0]] = pair[1];
+      return acc;
+    }, {});
+  });
+}
+
 /* ══════════════════════════════════════════
    PDF EXPORT
 ══════════════════════════════════════════ */
@@ -1824,9 +1774,14 @@ function exportPDF(){
   if(!data.titulo.trim()){toast('⚠ Preencha o título');return}
   saveIT();
   toast('⏳ Gerando PDF...');
-  const crmList=(data.crms||[]).map(i=>CRM_ICONS[i]).filter(Boolean);
-  preConverterCRMs(crmList).then(function(pngs){
-    gerarPDF(data, pngs, function(doc){
+    const riskIndexes=(data.steps||[]).flatMap(function(step){
+    return (step.elements||[]).flatMap(function(el){ return el.risks||[]; });
+  });
+  Promise.all([
+    preConverterRiskMap(riskIndexes)
+  ]).then(function(results){
+    const riskPngMap=results[0];
+    gerarPDF(data, [], riskPngMap, function(doc){
       if(!doc){toast('❌ Erro ao gerar PDF');return}
       const fn='IT_'+(data.titulo||'IT').replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)+'.pdf';
       try{ doc.save(fn); toast('✅ PDF gerado!'); }
@@ -1839,9 +1794,14 @@ function sendByEmail(){
   const data=collectIT();
   if(!data.titulo.trim()){toast('⚠ Preencha o título primeiro');return}
   toast('⏳ Gerando PDF para e-mail...');
-  const crmList=(data.crms||[]).map(i=>CRM_ICONS[i]).filter(Boolean);
-  preConverterCRMs(crmList).then(function(pngs){
-    gerarPDF(data, pngs, function(doc){
+    const riskIndexes=(data.steps||[]).flatMap(function(step){
+    return (step.elements||[]).flatMap(function(el){ return el.risks||[]; });
+  });
+  Promise.all([
+    preConverterRiskMap(riskIndexes)
+  ]).then(function(results){
+    const riskPngMap=results[0];
+    gerarPDF(data, [], riskPngMap, function(doc){
       if(!doc){toast('❌ Erro ao gerar PDF');return}
       const fn='IT_'+(data.titulo||'IT').replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)+'.pdf';
       try{
@@ -1897,7 +1857,7 @@ function addLogoFit(doc, logoDataUrl, boxX, boxY, boxW, boxH){
    Toda lógica dentro de uma função só,
    variáveis no mesmo escopo — sem bugs de closure
 ══════════════════════════════════════════ */
-function gerarPDF(data, crmPngs, onDone){
+function gerarPDF(data, crmPngs, riskPngMap, onDone){
   try{
     // ── Constantes globais do layout
     const {jsPDF} = window.jspdf;
@@ -2148,6 +2108,7 @@ function gerarPDF(data, crmPngs, onDone){
         doc.setTextColor(30,30,30);doc.setFont('helvetica','normal');doc.setFontSize(5.5);
         const cpL=doc.splitTextToSize(el.condicoesPerigosas||'—',colW-4);
         doc.text(cpL.slice(0,Math.floor((cpH-7)/2.2)),x+2,cy+8);
+
         cy+=cpH;
 
         // Controles críticos
@@ -2186,13 +2147,15 @@ function gerarPDF(data, crmPngs, onDone){
         }
       });
 
-      // ── Faixa CRM — grade ÚNICA distribuída na largura total da faixa
-      //    (não por coluna de step, evita aparência de descentralização)
+      // ── Faixa CRM + Riscos Associados dentro do mesmo campo
       const crmPY = phY + photoHR;
-      const HDR   = 5;    // altura do cabeçalho amarelo
-      const ICOPASO = 16; // tamanho do ícone (mantido)
-      const LBSPC  = 8;   // espaço reservado para o label
-      const crmPH  = HDR + ICOPASO + LBSPC + 4; // altura total da faixa
+      const HDR   = 5;     // cabeçalho amarelo
+      const ICOPASO = 14;  // ícones um pouco menores para acomodar riscos
+      const LBSPC  = 7;    // espaço do label abaixo do ícone
+      const CRM_AREA_H  = 24;
+      const RISK_HDR_H  = 4.5;
+      const RISK_AREA_H = 15;
+      const crmPH  = HDR + CRM_AREA_H + RISK_HDR_H + RISK_AREA_H;
 
       // ── Cabeçalho amarelo span total
       doc.setFillColor(255,193,7);
@@ -2200,57 +2163,116 @@ function gerarPDF(data, crmPngs, onDone){
       doc.setDrawColor(160,120,0); doc.setLineWidth(0.3);
       doc.rect(M, crmPY, W-2*M, HDR);
       doc.setTextColor(60,30,0); doc.setFontSize(6); doc.setFont('helvetica','bold');
-      doc.text('⚠  CRM — Controles de Riscos Mandatórios', W/2, crmPY+3.5, {align:'center'});
+      doc.text('⚠  Riscos Associados', W/2, crmPY+3.5, {align:'center'});
 
-      // ── Fundo da área de ícones (largura total)
-      const baseY = crmPY + HDR;
-      const celH  = crmPH - HDR;
+      // ── Área principal do CRM
+      const crmBaseY = crmPY + HDR;
       doc.setFillColor(255,252,235);
-      doc.rect(M, baseY, W-2*M, celH, 'F');
+      doc.rect(M, crmBaseY, W-2*M, CRM_AREA_H, 'F');
       doc.setDrawColor(200,160,0); doc.setLineWidth(0.15);
-      doc.rect(M, baseY, W-2*M, celH);
+      doc.rect(M, crmBaseY, W-2*M, CRM_AREA_H);
 
       // ── Distribui TODOS os CRMs uniformemente na largura total
-      const gCRMs  = data.crms || [];
+      const gCRMs  = Array.from(new Set((cards||[]).flatMap(function(card){ return card && card.risks ? card.risks : []; })));
       const nCRMs  = gCRMs.length;
 
       if(nCRMs === 0){
         doc.setTextColor(180,180,180); doc.setFontSize(5); doc.setFont('helvetica','normal');
-        doc.text('Sem CRM selecionado', W/2, baseY+celH/2+1, {align:'center'});
+        doc.text('Sem risco associado selecionado', W/2, crmBaseY + CRM_AREA_H/2 + 1, {align:'center'});
       } else {
-        // Largura total disponível para os ícones
         const faixaW = W - 2*M;
-        // Espaço entre ícones = distribuição uniforme
-        const gap = (faixaW - nCRMs * ICOPASO) / (nCRMs + 1);
-        // Y centrado na célula (espaço para o label abaixo)
-        const iy = baseY + (celH - ICOPASO - LBSPC) / 2;
+        const gap = Math.max(3, (faixaW - nCRMs * ICOPASO) / (nCRMs + 1));
+        const totalNeeded = nCRMs * ICOPASO + (nCRMs + 1) * gap;
+        const offsetX = M + Math.max(0, (faixaW - totalNeeded) / 2);
+        const iy = crmBaseY + 2;
 
         gCRMs.forEach(function(crmIdx, i){
-          const crm    = CRM_ICONS[crmIdx];
-          const pngUrl = crmPngs[i];
+          const crm    = ASSOCIATED_ICONS[crmIdx];
+          const pngUrl = riskPngMap ? riskPngMap[crmIdx] : null;
           if(!crm) return;
 
-          // X: distribuição uniforme — gap antes de cada ícone
-          const ix = M + gap + i * (ICOPASO + gap);
+          const ix = offsetX + gap + i * (ICOPASO + gap);
 
-          // Fundo branco + borda dourada
           doc.setFillColor(255,255,255);
           doc.roundedRect(ix-0.5, iy-0.5, ICOPASO+1, ICOPASO+1, 0.5, 0.5, 'F');
           doc.setDrawColor(180,140,0); doc.setLineWidth(0.2);
           doc.roundedRect(ix-0.5, iy-0.5, ICOPASO+1, ICOPASO+1, 0.5, 0.5, 'S');
 
-          // Imagem
           if(pngUrl){ try{ doc.addImage(pngUrl,'PNG',ix,iy,ICOPASO,ICOPASO); }catch(e2){} }
 
-          // Label — nome completo em até 2 linhas, centrado no ícone
           const lbX  = ix + ICOPASO/2;
           const lbY  = iy + ICOPASO + 2.5;
-          const lbMaxW = ICOPASO + 6;
+          const lbMaxW = ICOPASO + 8;
           doc.setFontSize(4); doc.setTextColor(40,20,0); doc.setFont('helvetica','bold');
           const nmLines = doc.splitTextToSize(crm.name, lbMaxW);
           nmLines.slice(0,2).forEach(function(ln, li){
-            doc.text(ln, lbX, lbY + li*3.5, {align:'center'});
+            doc.text(ln, lbX, lbY + li*3.2, {align:'center'});
           });
+        });
+      }
+
+      // ── Subfaixa interna: Riscos Associados (também dentro do campo CRM)
+      const riskHdrY = crmBaseY + CRM_AREA_H;
+      doc.setFillColor(255,243,205);
+      doc.rect(M, riskHdrY, W-2*M, RISK_HDR_H, 'F');
+      doc.setDrawColor(200,160,0); doc.setLineWidth(0.15);
+      doc.rect(M, riskHdrY, W-2*M, RISK_HDR_H);
+      doc.setTextColor(120,70,0); doc.setFontSize(5.5); doc.setFont('helvetica','bold');
+      doc.text('Riscos Associados', M+2, riskHdrY+3.1);
+
+      const riskAreaY = riskHdrY + RISK_HDR_H;
+      doc.setFillColor(255,252,235);
+      doc.rect(M, riskAreaY, W-2*M, RISK_AREA_H, 'F');
+      doc.setDrawColor(200,160,0); doc.setLineWidth(0.15);
+      doc.rect(M, riskAreaY, W-2*M, RISK_AREA_H);
+
+      const pageRiskIds = Array.from(new Set(
+        cards.flatMap(function(el){
+          return (el.risks || []).filter(function(ri){ return !!ASSOCIATED_ICONS[ri]; });
+        })
+      ));
+
+      if(pageRiskIds.length === 0){
+        doc.setTextColor(180,180,180); doc.setFontSize(5); doc.setFont('helvetica','normal');
+        doc.text('Sem riscos associados selecionados', W/2, riskAreaY + RISK_AREA_H/2 + 1, {align:'center'});
+      } else {
+        const padX = 2.5;
+        const icon = 4.2;
+        const itemGap = 2.2;
+        let cursorX = M + padX;
+        let cursorY = riskAreaY + 4.7;
+        const maxX = W - M - padX;
+
+        pageRiskIds.forEach(function(ri){
+          const risk = ASSOCIATED_ICONS[ri];
+          if(!risk) return;
+
+          const label = risk.name;
+          doc.setFont('helvetica','bold'); doc.setFontSize(4.5);
+          const textW = doc.getTextWidth(label);
+          const itemW = icon + 1.5 + textW + 3;
+
+          if(cursorX + itemW > maxX){
+            cursorX = M + padX;
+            cursorY += 5.5;
+          }
+
+          if(cursorY > riskAreaY + RISK_AREA_H - 1.5) return;
+
+          doc.setFillColor(255,255,255);
+          doc.roundedRect(cursorX, cursorY-3.5, itemW, 5, 0.8, 0.8, 'F');
+          doc.setDrawColor(220,185,80); doc.setLineWidth(0.15);
+          doc.roundedRect(cursorX, cursorY-3.5, itemW, 5, 0.8, 0.8, 'S');
+
+          const riskPng = riskPngMap ? riskPngMap[ri] : null;
+          if(riskPng){
+            try{ doc.addImage(riskPng,'PNG',cursorX+0.7,cursorY-3,icon,icon); }catch(e3){}
+          }
+
+          doc.setTextColor(90,50,0); doc.setFont('helvetica','bold'); doc.setFontSize(4.5);
+          doc.text(label, cursorX + icon + 1.5, cursorY);
+
+          cursorX += itemW + itemGap;
         });
       }
 
@@ -2337,8 +2359,7 @@ function enviarEmail(){
   setEmailStatus('⏳ Gerando PDF, aguarde…','info');
 
   const fn='IT_'+(data.titulo||'IT').replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)+'.pdf';
-  const crmList=(data.crms||[]).map(i=>CRM_ICONS[i]).filter(Boolean);
-
+  
   preConverterCRMs(crmList).then(function(pngs){
     gerarPDF(data, pngs, function(doc){
       if(!doc){
@@ -2665,7 +2686,6 @@ document.addEventListener('DOMContentLoaded',()=>{
 // fallback se DOM já carregado
 setTimeout(renderSplashCompanySelector,50);
 renderHome();
-renderCRMChips();
 </script>
 
 <!-- ══ COMPANY SELECTOR MODAL ══════════════════════════════════ -->
