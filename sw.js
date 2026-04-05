@@ -1,27 +1,67 @@
-const CACHE = 'facilita-v2';
-const FILES = [
-  './', './index.html', './manifest.json',
-  './tema-escuro.html', './tema-verde.html',
-  './tema-dourado.html', './tema-claro.html'
+const CACHE_NAME = 'facilita-v5';
+
+const APP_ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './sw.js',
+  './tema-claro.html',
+  './tema-escuro.html',
+  './tema-verde.html',
+  './tema-dourado.html'
 ];
-self.addEventListener('install', e=>{
-  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)));
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS))
+  );
   self.skipWaiting();
 });
-self.addEventListener('activate', e=>{
-  e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
+      )
+    )
+  );
   self.clients.claim();
 });
-self.addEventListener('fetch', e=>{
-  e.respondWith(
-    caches.match(e.request).then(cached=>{
-      if(cached)return cached;
-      return fetch(e.request).then(r=>{
-        if(!r||r.status!==200)return r;
-        const cl=r.clone();
-        caches.open(CACHE).then(c=>c.put(e.request,cl));
-        return r;
-      }).catch(()=>caches.match('./index.html'));
+
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          return response;
+        })
+        .catch(() =>
+          caches.match(request).then((res) => res || caches.match('./index.html'))
+        )
+    );
+    return;
+  }
+
+  event.respondWith(
+    caches.match(request).then((cached) => {
+      const networkFetch = fetch(request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => cached);
+
+      return cached || networkFetch;
     })
   );
 });
