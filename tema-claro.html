@@ -457,6 +457,24 @@ body{display:flex;flex-direction:column;max-width:540px;margin:0 auto;position:r
 .email-status.info{background:var(--blue-bg);color:var(--blue);display:block;}
 .email-status.ok{background:var(--green-bg);color:var(--green);display:block;}
 .email-status.err{background:var(--red-bg);color:var(--red);display:block;}
+
+/* ─── WHATSAPP MODAL ─── */
+#wpp-modal{
+  position:fixed;inset:0;z-index:8500;
+  background:rgba(0,0,0,.75);backdrop-filter:blur(6px);
+  display:flex;align-items:flex-end;justify-content:center;
+  opacity:0;pointer-events:none;transition:.3s;}
+#wpp-modal.open{opacity:1;pointer-events:all;}
+.wpp-sheet{
+  background:var(--card);border-radius:24px 24px 0 0;
+  padding:22px 18px 32px;width:100%;max-width:540px;
+  border-top:1px solid var(--border);
+  transform:translateY(100%);transition:.35s cubic-bezier(.32,1.2,.5,1);}
+#wpp-modal.open .wpp-sheet{transform:translateY(0);}
+.wpp-sheet-title{font-size:15px;font-weight:800;color:var(--text);text-align:center;margin-bottom:6px;}
+.wpp-sheet-sub{font-size:11px;color:var(--text3);text-align:center;margin-bottom:18px;line-height:1.4;}
+.btn-wpp{background:linear-gradient(135deg,#25D366,#128C7E);color:#fff;box-shadow:0 4px 16px rgba(37,211,102,.3);}
+.btn-wpp:active{box-shadow:0 2px 8px rgba(37,211,102,.5);}
 </style>
 </head>
 <style>
@@ -674,6 +692,7 @@ body{display:flex;flex-direction:column;max-width:540px;margin:0 auto;position:r
       <button class="btn btn-b" onclick="previewIT()">👁 Visualizar</button>
       <button class="btn btn-o" onclick="exportPDF()">📄 Exportar PDF</button>
       <button class="btn" style="background:linear-gradient(135deg,#0277BD,#40C4FF);color:#fff;" onclick="abrirEmailModal()">✉️ Enviar por E-mail</button>
+      <button class="btn btn-wpp" onclick="abrirWppModal()">💬 WhatsApp</button>
     </div>
     <div style="height:90px;"></div>
   </div>
@@ -684,6 +703,7 @@ body{display:flex;flex-direction:column;max-width:540px;margin:0 auto;position:r
     <div class="btn-row" style="margin-top:12px;">
       <button class="btn btn-b" onclick="exportPDF()">📄 Exportar PDF</button>
       <button class="btn" style="background:linear-gradient(135deg,#0277BD,#40C4FF);color:#fff;" onclick="abrirEmailModal()">✉️ Enviar por E-mail</button>
+      <button class="btn btn-wpp" onclick="abrirWppModal()">💬 WhatsApp</button>
       <button class="btn btn-ghost" onclick="navBack()">← Voltar ao Editor</button>
     </div>
     <div style="height:90px;"></div>
@@ -2346,9 +2366,12 @@ function enviarEmail(){
   setEmailStatus('⏳ Gerando PDF, aguarde…','info');
 
   const fn='IT_'+(data.titulo||'IT').replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)+'.pdf';
-  
-  preConverterCRMs(crmList).then(function(pngs){
-    gerarPDF(data, pngs, function(doc){
+
+  const riskIndexes=(data.steps||[]).flatMap(function(step){
+    return (step.elements||[]).flatMap(function(el){ return el.risks||[]; });
+  });
+  preConverterRiskMap(riskIndexes).then(function(riskPngMap){
+    gerarPDF(data, [], riskPngMap, function(doc){
       if(!doc){
         setEmailStatus('❌ Erro ao gerar o PDF. Tente novamente.','err');
         if(btn){btn.disabled=false;btn.textContent='📤 Gerar PDF e Enviar';}
@@ -2673,6 +2696,96 @@ document.addEventListener('DOMContentLoaded',()=>{
 // fallback se DOM já carregado
 setTimeout(renderSplashCompanySelector,50);
 renderHome();
+
+/* ══════════════════════════════════════════
+   WHATSAPP — ENVIO COM PDF ANEXO
+══════════════════════════════════════════ */
+function abrirWppModal(){
+  const modal=document.getElementById('wpp-modal');
+  if(!modal)return;
+  document.getElementById('wpp-status').className='email-status';
+  document.getElementById('wpp-status').textContent='';
+  const btn=document.getElementById('wpp-send-btn');
+  if(btn){btn.disabled=false;btn.textContent='💬 Gerar PDF e Enviar';}
+  modal.classList.add('open');
+  modal.onclick=function(e){if(e.target===modal)fecharWppModal();};
+}
+function fecharWppModal(){
+  const modal=document.getElementById('wpp-modal');
+  if(modal)modal.classList.remove('open');
+}
+function setWppStatus(msg,tipo){
+  const el=document.getElementById('wpp-status');
+  if(!el)return;
+  el.className='email-status'+(tipo?' '+tipo:'');
+  el.textContent=msg;
+}
+function enviarWhatsApp(){
+  const data=collectIT();
+  if(!data.titulo.trim()){setWppStatus('⚠ Preencha o título da IT antes de enviar.','err');return;}
+  const btn=document.getElementById('wpp-send-btn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Gerando PDF…';}
+  setWppStatus('⏳ Gerando PDF, aguarde…','info');
+  const fn='IT_'+(data.titulo||'IT').replace(/[^a-zA-Z0-9]/g,'_').substring(0,40)+'.pdf';
+  const riskIndexes=(data.steps||[]).flatMap(function(step){
+    return (step.elements||[]).flatMap(function(el){return el.risks||[];});
+  });
+  preConverterRiskMap(riskIndexes).then(function(riskPngMap){
+    gerarPDF(data,[],riskPngMap,function(doc){
+      if(!doc){
+        setWppStatus('❌ Erro ao gerar o PDF. Tente novamente.','err');
+        if(btn){btn.disabled=false;btn.textContent='💬 Gerar PDF e Enviar';}
+        return;
+      }
+      try{
+        const pdfBlob=doc.output('blob');
+        if(navigator.share&&navigator.canShare){
+          const pdfFile=new File([pdfBlob],fn,{type:'application/pdf'});
+          if(navigator.canShare({files:[pdfFile]})){
+            setWppStatus('📤 Abrindo WhatsApp…','info');
+            navigator.share({
+              title:'IT: '+data.titulo,
+              text:'📋 *IT — '+data.titulo+'*\nElaborador: '+(data.elaborador||'—')+'\nEmpresa: '+activeCompany.name,
+              files:[pdfFile]
+            }).then(function(){
+              setWppStatus('✅ PDF compartilhado!','ok');
+              if(btn){btn.disabled=false;btn.textContent='💬 Gerar PDF e Enviar';}
+              setTimeout(fecharWppModal,2000);
+            }).catch(function(err){
+              if(err.name!=='AbortError'){_fallbackWpp(data,fn,pdfBlob,btn);}
+              else{setWppStatus('','');if(btn){btn.disabled=false;btn.textContent='💬 Gerar PDF e Enviar';}}
+            });
+            return;
+          }
+        }
+        _fallbackWpp(data,fn,pdfBlob,btn);
+      }catch(e){
+        setWppStatus('❌ Erro: '+e.message,'err');
+        if(btn){btn.disabled=false;btn.textContent='💬 Gerar PDF e Enviar';}
+      }
+    });
+  });
+}
+function _fallbackWpp(data,fn,pdfBlob,btn){
+  try{
+    const url=URL.createObjectURL(pdfBlob);
+    const a=document.createElement('a');
+    a.href=url;a.download=fn;
+    document.body.appendChild(a);a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e2){}
+  const msg=encodeURIComponent(
+    '📋 *Instrução de Trabalho — FacilITa*\n'+
+    '*Título:* '+data.titulo+'\n*PRO:* '+(data.pro||'—')+'\n'+
+    '*Elaborador:* '+(data.elaborador||'—')+'\n*Empresa:* '+activeCompany.name+
+    '\n\n📎 Anexe o arquivo: '+fn
+  );
+  setTimeout(function(){window.open('https://web.whatsapp.com/send?text='+msg,'_blank');},800);
+  setWppStatus('📎 PDF baixado! Anexe no WhatsApp que abriu.','ok');
+  if(btn){btn.disabled=false;btn.textContent='💬 Gerar PDF e Enviar';}
+  setTimeout(fecharWppModal,3500);
+}
 </script>
 
 <!-- ══ COMPANY SELECTOR MODAL ══════════════════════════════════ -->
@@ -2716,5 +2829,19 @@ renderHome();
   </div>
 </div>
 
+<div id="wpp-modal">
+  <div class="wpp-sheet">
+    <div class="wpp-sheet-title">💬 Enviar via WhatsApp</div>
+    <div class="wpp-sheet-sub">
+      O PDF será gerado e compartilhado via WhatsApp.<br/>
+      No celular: abre direto com o arquivo anexado.
+    </div>
+    <div id="wpp-status" class="email-status"></div>
+    <button class="btn btn-wpp" id="wpp-send-btn" onclick="enviarWhatsApp()" style="margin-bottom:10px;">
+      💬 Gerar PDF e Enviar
+    </button>
+    <button onclick="fecharWppModal()" class="btn btn-ghost">Cancelar</button>
+  </div>
+</div>
 </body>
 </html>
