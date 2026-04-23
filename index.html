@@ -185,7 +185,6 @@ document.querySelectorAll('.tc').forEach(c=>{
   c.addEventListener('click',()=>{localStorage.setItem('facilita_ultimo_tema',c.id.replace('card-',''));});
 });
 // Service Worker
-<script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
